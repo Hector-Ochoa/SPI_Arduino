@@ -1,22 +1,18 @@
  /*
   Datalogger used to record data from the TI PGA970EVM board.
-
 The circuit:
   Using the SparkFun SD card Shield attached to SPI bus as follows:
     MOSI - pin 11
     MISO - pin 12
     CLK - pin 13
     SS - pin 8
-
   PGA970EVM Board
     SS - pin 4        - Requires Voltage Divider resistor values used are 4.7k and 5.6k
     MOSI - pin 11     - Requires Voltage Divider resistor values used are 4.7k and 5.6k
     MISO - pin 12
     CLK - pin 13      - Requires Voltage Divider resistor values used are 4.7k and 5.6k
-
   RED LED used for Error Messaging.
     LED - pin 1
-
 LED Error Code:
   250ms ON, 250ms OFF         - No SD Card detected.
   2 Short Blinks, Long Off    - File Open Error, Requires Restart.
@@ -32,7 +28,6 @@ LED Error Code:
 #define PGA970_SPI_ORDER MSBFIRST
 #define PGA970_SPI_MODE SPI_MODE0
 #define PGA970_DATA_SIZE 3                  //Number of bytes to be transferred at a time.
-#define PGA970_BYTES_RX 16                  //Number of ASCII characters received in total per cycle. Changing this value may cause array out of bounds! Will not throw error!
 
 //PGA970 Commands
 #define PGA970_CMD_READ_BUFF 0x008000       //Read the PGA970 SPI Buffer                0b000 00000100 0 XXXXXXXX 0000
@@ -51,7 +46,7 @@ LED Error Code:
 
 SPISettings PGA970Settings(PGA970_SPI_SPEED, PGA970_SPI_ORDER, PGA970_SPI_MODE);
 char PGA970Buffer[PGA970_DATA_SIZE];
-char dataString[PGA970_BYTES_RX + 4];                   //Extra for Null terminator and the '.' or voltage
+char dataString[17];                   //Extra for Null terminator and the '.' or voltage
 
 
 void setup() {
@@ -71,7 +66,7 @@ void setup() {
 #endif
 
 //The final value in the char array MUST be Null to serve as a Null Terminator so the array can be easily converted to a String object. This can be set here, to save time, because it should NEVER be changed.
-  dataString[PGA970_BYTES_RX + 1] = 0x00;
+  dataString[16] = 0x00;
   pinMode(PGA970_SS_PIN,OUTPUT);
   digitalWrite(PGA970_SS_PIN, HIGH);  
   SPI.begin();     
@@ -89,23 +84,7 @@ void loop(){
   //Serial.println("hello");
 //Ignore received Data, it will be dummy data.
 
-
-
-  do{
-    PGA970Buffer[0]= PGA970_CMD_READ_STATUS;
-    PGA970Buffer[1]= PGA970_CMD_READ_STATUS >> 8;
-    PGA970Buffer[2]= PGA970_CMD_READ_STATUS >> 16;
-    SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
-    #ifdef DEBUG_MODE
-      Serial.println(PGA970Buffer[1]);
-      #endif
-  }while(PGA970Buffer[1] !=0x01);                       //Polling COM_TXRDY bit of COM_TX_STATUS Register
-
-  PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                //Sending command to read data results will be the COM_TX_STATUS again, so ignore.
-  PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
-  PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
-  SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
-//Ignore received Data, it will be dummy data.
+  PollStatus();
 
   PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                //Send command to continue to read the buffer. Might need to poll COM_TX_STATUS again. Received data will be first set of real data.
   PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
@@ -116,6 +95,8 @@ void loop(){
   dataString[1] = '.';                                  //There is plenty of program memory and speed in more important.
   dataString[2] = PGA970Buffer[2];
 
+  PollStatus();
+
   PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                
   PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
   PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
@@ -124,7 +105,9 @@ void loop(){
   dataString[3] = PGA970Buffer[1];                                                        
   dataString[4] = PGA970Buffer[2];
 
-  PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                
+  PollStatus();
+
+  PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                //Send command to continue to read the buffer. Data will now be the temperature.
   PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
   PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
   SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
@@ -132,53 +115,39 @@ void loop(){
   dataString[5] = PGA970Buffer[1];                                                        
   dataString[6] = PGA970Buffer[2];
 
-  PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                //Send command to continue to read the buffer. Data will now be the temperature.
-  PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
-  PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
-  SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
-
-  dataString[7] = PGA970Buffer[1];                                                        
-  dataString[8] = PGA970Buffer[2];
-
 //The 8 Characters of the LVDT Voltage have been read.
-  dataString[9] = ',';
+  dataString[8] = ',';
+
+  PollStatus();
 
   PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                
   PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
   PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
   SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
 
-  dataString[10] = PGA970Buffer[1];
-  dataString[11] = '.';                                                      
-  dataString[12] = PGA970Buffer[2];
+  dataString[9] = PGA970Buffer[1];
+  dataString[10] = '.';                                                      
+  dataString[11] = PGA970Buffer[2];
+
+  PollStatus();
 
   PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                
   PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
   PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
   SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
 
-  dataString[13] = PGA970Buffer[1];
-                                        
-  dataString[14] = PGA970Buffer[2];
+  dataString[12] = PGA970Buffer[1];
+  dataString[13] = PGA970Buffer[2];
 
-  PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                
-  PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
-  PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
-  SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
+  PollStatus();
 
-  dataString[15] = PGA970Buffer[1];                                                        
-  dataString[16] = PGA970Buffer[2];
-
-//Receive final 2 characters of data.
   PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                //Sending Dummy command to read the buffer.
-
-  
   PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
   PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
   SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
 
-  dataString[17] = PGA970Buffer[1];                                                        
-  dataString[18] = PGA970Buffer[2];  
+  dataString[14] = PGA970Buffer[1];                                                        
+  dataString[15] = PGA970Buffer[2];
   
 #ifdef DEBUG_MODE
   Serial.println(String(dataString));
@@ -204,3 +173,22 @@ void loop(){
   }
 #endif
 }
+
+void PollStatus(){
+  do{
+    PGA970Buffer[0]= PGA970_CMD_READ_STATUS;
+    PGA970Buffer[1]= PGA970_CMD_READ_STATUS >> 8;
+    PGA970Buffer[2]= PGA970_CMD_READ_STATUS >> 16;
+    SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
+#ifdef DEBUG_MODE
+      Serial.println(PGA970Buffer[1]);
+#endif
+  }while(PGA970Buffer[1] !=0x01);                       //Polling COM_TXRDY bit of COM_TX_STATUS Register
+ 
+  PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                //Sending command to read data results will be the COM_TX_STATUS again, so ignore.
+  PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
+  PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
+  SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
+//Ignore received Data, it will be dummy data.
+}
+
