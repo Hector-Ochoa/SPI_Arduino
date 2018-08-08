@@ -26,12 +26,12 @@ LED Error Code:
 //Configure Settings for PGA970
 #define PGA970_SPI_SPEED 1000000
 #define PGA970_SPI_ORDER MSBFIRST
-#define PGA970_SPI_MODE SPI_MODE0
+#define PGA970_SPI_MODE SPI_MODE1
 #define PGA970_DATA_SIZE 3                  //Number of bytes to be transferred at a time.
 
 //PGA970 Commands
 #define PGA970_CMD_READ_BUFF 0x008000       //Read the PGA970 SPI Buffer                0b000 00000100 0 XXXXXXXX 0000
-#define PGA970_CMD_READ_STATUS 0x00A000     //Read the PGA970 SPI Status                0b000 00000101 0 XXXXXXXX 0000
+#define PGA970_CMD_READ_STATUS 0x00C000     //Read the PGA970 SPI Status                0b000 00000110 0 XXXXXXXX 0000
 #define PGA970_CMD_WRITE_BUFF 0x011000      //Write to the PGA970 SPI Buffer
 #define PGA970_CMD_START_TX 0x011AA0        //Command to load data to SPI Buffer        0b000 00001000 1 10101010 0000
 
@@ -39,7 +39,7 @@ LED Error Code:
 #define FILE_NAME "Data.txt"
 
 //Debug Mode comment out define statement to remove debug mode.
-#define DEBUG_MODE
+//#define DEBUG_MODE
 
 #include <SPI.h>
 #include <SD.h>
@@ -48,10 +48,9 @@ SPISettings PGA970Settings(PGA970_SPI_SPEED, PGA970_SPI_ORDER, PGA970_SPI_MODE);
 char PGA970Buffer[PGA970_DATA_SIZE];
 char dataString[17];                   //Extra for Null terminator and the '.' or voltage
 
-
 void setup() {
   pinMode(RED_ERROR_LED,OUTPUT);
-  
+
 #ifndef DEBUG_MODE 
   while(!SD.begin(SD_SS_PIN)){
     digitalWrite(RED_ERROR_LED, HIGH);
@@ -67,21 +66,21 @@ void setup() {
 
 //The final value in the char array MUST be Null to serve as a Null Terminator so the array can be easily converted to a String object. This can be set here, to save time, because it should NEVER be changed.
   dataString[16] = 0x00;
-  pinMode(PGA970_SS_PIN,OUTPUT);
-  digitalWrite(PGA970_SS_PIN, HIGH);  
+  pinMode(PGA970_SS_PIN,OUTPUT); 
+  digitalWrite(PGA970_SS_PIN, HIGH); 
   SPI.begin();     
+  delay(500);
 }
 
-void loop(){
+void loop(){  
   PGA970Buffer[0]= PGA970_CMD_START_TX;
   PGA970Buffer[1]= PGA970_CMD_START_TX >> 8;
   PGA970Buffer[2]= PGA970_CMD_START_TX >> 16;           //Load command into the buffer to be sent. The buffer is a char array, bytes beyond the first byte should be ignored.
   
-  
   SPI.beginTransaction(PGA970Settings);
   digitalWrite(PGA970_SS_PIN, LOW);                     //SPI is active low Slave Select.
+
   SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
-  //Serial.println("hello");
 //Ignore received Data, it will be dummy data.
 
   PollStatus();
@@ -116,7 +115,7 @@ void loop(){
   dataString[6] = PGA970Buffer[2];
 
 //The 8 Characters of the LVDT Voltage have been read.
-  dataString[8] = ',';
+  dataString[7] = ',';
 
   PollStatus();
 
@@ -125,9 +124,9 @@ void loop(){
   PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
   SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
 
-  dataString[9] = PGA970Buffer[1];
-  dataString[10] = '.';                                                      
-  dataString[11] = PGA970Buffer[2];
+  dataString[8] = PGA970Buffer[1];
+  dataString[9] = '.';                                                      
+  dataString[10] = PGA970Buffer[2];
 
   PollStatus();
 
@@ -136,8 +135,8 @@ void loop(){
   PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
   SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
 
-  dataString[12] = PGA970Buffer[1];
-  dataString[13] = PGA970Buffer[2];
+  dataString[11] = PGA970Buffer[1];
+  dataString[12] = PGA970Buffer[2];
 
   PollStatus();
 
@@ -146,16 +145,20 @@ void loop(){
   PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
   SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
 
-  dataString[14] = PGA970Buffer[1];                                                        
-  dataString[15] = PGA970Buffer[2];
+  dataString[13] = PGA970Buffer[1];                                                        
+  dataString[14] = PGA970Buffer[2];
+  SPI.end();
   
 #ifdef DEBUG_MODE
+  Serial.print(String(millis(),DEC));
+  Serial.print(',');
   Serial.println(String(dataString));
 #endif
 
 #ifndef DEBUG_MODE  
   File dataFile = SD.open(FILE_NAME, FILE_WRITE);
   if (dataFile) {
+    dataFile.print(millis() + ',');
     dataFile.println(String(dataString));
     dataFile.close();
   }
@@ -172,23 +175,30 @@ void loop(){
     }
   }
 #endif
+
+ delay(5000);
 }
 
 void PollStatus(){
+
   do{
+      digitalWrite(PGA970_SS_PIN,HIGH);
+  digitalWrite(PGA970_SS_PIN,LOW);
     PGA970Buffer[0]= PGA970_CMD_READ_STATUS;
     PGA970Buffer[1]= PGA970_CMD_READ_STATUS >> 8;
     PGA970Buffer[2]= PGA970_CMD_READ_STATUS >> 16;
     SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
 #ifdef DEBUG_MODE
-      Serial.println(PGA970Buffer[1]);
+      //Serial.println(PGA970Buffer[1]);
 #endif
   }while(PGA970Buffer[1] !=0x01);                       //Polling COM_TXRDY bit of COM_TX_STATUS Register
- 
+  digitalWrite(PGA970_SS_PIN,HIGH);
+  digitalWrite(PGA970_SS_PIN,LOW);
   PGA970Buffer[0]= PGA970_CMD_READ_BUFF;                //Sending command to read data results will be the COM_TX_STATUS again, so ignore.
   PGA970Buffer[1]= PGA970_CMD_READ_BUFF >> 8;
   PGA970Buffer[2]= PGA970_CMD_READ_BUFF >> 16;
   SPI.transfer(&PGA970Buffer,PGA970_DATA_SIZE);
 //Ignore received Data, it will be dummy data.
+  digitalWrite(PGA970_SS_PIN,HIGH);
+  digitalWrite(PGA970_SS_PIN,LOW);
 }
-
