@@ -1,0 +1,139 @@
+/* =============================================================================
+*                 Texas Instruments PGA970 Platform Software
+* (c) Copyright Texas Instruments, Incorporated. All Rights Reserved.
+*
+* Use of this software is controlled by the terms and conditions found
+* in the license agreement under which this software has been supplied.
+* =========================================================================== */
+/**
+* @file pga970_main.c
+*
+* This File contains PGA970 main functions.
+*
+* @path $(CSLPATH)\PGA970\source\core
+*
+* @rev 1.3
+*/
+/* -----------------------------------------------------------------------------
+*!
+*! Revision History
+*! ===================================
+*! 06-June-2013 mf: Modified TusharB.Modified main loop.
+* =========================================================================== */
+
+/*******************************************************************************
+* INCLUDE FILES
+*******************************************************************************/
+#include "pga970_platf.h"
+//
+/* ========================================================================== */
+/**
+ * main() Main routine
+ *
+ * @param none
+ *
+ * @return none
+ *
+ * @post none
+ *
+ * @see none
+ */
+/* ========================================================================== */
+
+#define Ref_Calc 2.5/5340354
+#define N_Dec 6
+
+
+void WAIT_RXTX(){
+    while(COM_RX_INT_ENABLE == 0);
+    COM_RX_STATUS = 1;
+    COMBUF_RX_STATUS_CLEAR();
+}
+
+void main(void)
+{
+int count;
+int dig_1;
+int i,POW10;
+float LVDT_Voltage;
+float TEMP_Voltage;
+
+    //config for waveform gen
+
+    WAVEFORM_Config(49,0.86, 0);
+    WAVEFORM_Read_Table();
+
+    //ADC1 CONFIG
+    CONFIG_ALPWR(0x04);
+    ADC_Config( 1, 0, 1, 8, 8);
+    S1_CONFIG(0);
+    DEMOD1_BPF_config( 0x951400, 0x18CBFF, 0xD6D6FF);
+    DEMOD1_LPF_config(0xF304, 0x1976);
+    AMUX_CTRL_CONFIG(0xF6);
+
+    //ADC3 CONFIG
+    ADC3_PTAT_LPF_Config(0x4A07,0x6C71);//LOW PASS FILTER
+    ADC3_VI_LPF_Config(0x4A07,0x6C71);//LOW PASS FILTER
+    S3_CONFIG(0x00);//Configures ADC3 gain, SEM, Inversion
+    S3_CFG_1_CONFIG(0x03);//Configures S3 PTAT gain and S3 inversion
+
+
+    //DIG_IF_CTRL = 0x01;
+    //MICRO_INTERFACE_CONTROL = 0x00;
+    CFG_Peripheral_Config();
+    ALPWR = 0x04;
+
+
+   while(1){
+       WAIT_RXTX();
+               LVDT_Voltage = Ref_Calc*(UI)(DEMOD1_DATA);
+               TEMP_Voltage = Ref_Calc*(UI)(ADC3_VI_DATA);
+               LVDT_Voltage = 1.23456;
+               TEMP_Voltage = 7.89012;
+
+               count = 0;
+               POW10 = 1;
+
+       for (i=0;i<N_Dec;i++){
+                   if (i == 1){
+                       POW10 = POW10*10;
+                   }
+                   dig_1 = (UI)(LVDT_Voltage*POW10);
+                   LVDT_Voltage = LVDT_Voltage*POW10 - (float)dig_1;
+                   count++;
+                   if (count == 1){
+                       COM_MCU_TO_DIF_B1 = dig_1+48;
+                   } else{
+                       COM_MCU_TO_DIF_B2 = dig_1+48;
+                       WAIT_RXTX();
+                       count = 0;
+                   }
+               }
+               count = 0;
+               POW10 = 1;
+               for (i=0;i<N_Dec;i++){
+                   if (i == 1){
+                       POW10 = POW10*10;
+                   }
+                   dig_1 = (int)(TEMP_Voltage*POW10);
+                   TEMP_Voltage = TEMP_Voltage*POW10 - (float)dig_1;
+                   count++;
+                   if (count == 1){
+                       COM_MCU_TO_DIF_B1 = dig_1+48;
+                   } else{
+                       COM_MCU_TO_DIF_B2 = dig_1+48;
+                       WAIT_RXTX();
+                       count = 0;
+                   }
+               }
+
+       // Every 2ms do main loop calculation
+       /*if((ADC_Count1 & Coefficients_Calc_Sampling_Rate) == 0x0000){
+           APP_Calculate_Coeff();
+           while((ADC_Count1 & Coefficients_Calc_Sampling_Rate) == 0x0000);
+       }*/
+
+   }
+
+}
+
